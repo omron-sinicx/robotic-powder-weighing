@@ -1,0 +1,8 @@
+prefix=/home/yuki-kadokawa/catkin_ws/devel
+
+Name: omni_common
+Description: Description of omni_common
+Version: 0.1.0
+Cflags: 
+Libs: -L${prefix}/lib 
+Requires: geometry_msgs omni_description omni_msgs robot_state_publisher sensor_msgs std_msgs tf xacro

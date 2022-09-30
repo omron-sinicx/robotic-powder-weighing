@@ -1,0 +1,193 @@
+<?xml version="1.0"?>
+
+<robot name="bucket">
+
+  <!-- link -->
+  
+  <link name="slider">
+    <!-- <visual>
+      <geometry>
+        <box size="0.03 8 0.03"/>
+      </geometry>
+      <material name="slider_mat">
+        <color rgba="0.9 0.6 0.2 1"/>
+      </material>
+    </visual> -->
+    <collision>
+      <geometry>
+        <box size="0.03 8 0.03"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <link name="cart">
+    <!-- <visual>
+      <geometry>
+        <box size="0.1 0.1 0.1"/>
+      </geometry>
+      <material name="cart_mat">
+        <color rgba="0.3 0.5 0.7 1"/>
+      </material>
+    </visual> -->
+    <collision>
+      <geometry>
+          <box size="0.1 0.1 0.1"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="1"/>
+    </inertial>
+  </link>
+
+  <link name="pole">
+    <visual>
+      <geometry>
+        <box size="0.04 3 3"/>
+        <!-- <mesh filename="bucket.stl" scale="0.01 0.01 0.01"/> -->
+      </geometry>
+      <origin xyz="0 0 0.47"/>
+      <!-- <material name="pole_mat">
+        <color rgba="0.1 0.1 0.3 1"/>
+      </material> -->
+    </visual>
+    <collision>
+      <geometry>
+        <box size="0.04 3 3"/>	
+      </geometry>
+      <origin xyz="0 0 0.47"/>
+    </collision>
+    <inertial>
+      <mass value="1"/>
+      <origin xyz="0 0 0.47"/>
+    </inertial>
+  </link>
+
+  <link name="pole_part1">
+    <visual>
+      <geometry>
+        <box size="1.5 3 0.04"/>
+      </geometry>
+      <origin xyz="0 0 0"/>
+    </visual>
+    <collision>
+      <geometry>
+        <box size="1.5 3 0.04"/>	
+      </geometry>
+      <origin xyz="0 0 0"/>
+    </collision>
+    <inertial>
+      <mass value="1"/>
+      <origin xyz="0 0 0"/>
+    </inertial>
+  </link>
+
+  <link name="pole_part2">
+    <visual>
+      <geometry>
+        <box size="1.5 3 0.04"/>
+      </geometry>
+      <origin xyz="0 0 0"/>
+    </visual>
+    <collision>
+      <geometry>
+        <box size="1.5 3 0.04"/>	
+      </geometry>
+      <origin xyz="0 0 0"/>
+    </collision>
+    <inertial>
+      <mass value="1"/>
+      <origin xyz="0 0 0"/>
+    </inertial>
+  </link>
+
+  <link name="pole_part3">
+    <visual>
+      <geometry>
+        <box size="1.5 0.04 3"/>
+      </geometry>
+      <origin xyz="0 0 0"/>
+    </visual>
+    <collision>
+      <geometry>
+        <box size="1.5 0.04 3"/>
+      </geometry>
+      <origin xyz="0 0 0"/>
+    </collision>
+    <inertial>
+      <mass value="1"/>
+      <origin xyz="0 0 0"/>
+    </inertial>
+  </link>
+
+  <link name="pole_part4">
+    <visual>
+      <geometry>
+        <box size="1.5 0.04 3"/>
+      </geometry>
+      <origin xyz="0 0 0"/>
+    </visual>
+    <collision>
+      <geometry>
+        <box size="1.5 0.04 3"/>
+      </geometry>
+      <origin xyz="0 0 0"/>
+    </collision>
+    <inertial>
+      <mass value="1"/>
+      <origin xyz="0 0 0"/>
+    </inertial>
+  </link>
+
+  <!-- joint -->
+
+  <joint name="slider_to_cart" type="prismatic">
+    <axis xyz="0 1 0"/>
+    <origin xyz="0 0 0"/>
+    <parent link="slider"/>
+    <child link="cart"/>
+    <limit effort="1000.0" lower="-4" upper="4" velocity="100"/>
+  </joint>
+
+  <joint name="cart_to_pole" type="continuous">
+    <axis xyz="0 0 1"/>
+    <!-- <origin xyz="0.12 0 0"/> -->
+    <origin xyz="0 0 1.1"/>
+    <parent link="cart"/>
+    <child link="pole"/>
+    <limit effort="1000.0" velocity="8"/>
+  </joint>
+
+  <joint name="none1" type="prismatic">
+    <axis xyz="0 1 0"/>
+    <origin xyz="-0.75 0 -1"/>
+    <parent link="pole"/>
+    <child link="pole_part1"/>
+    <limit effort="1000.0" lower="0" upper="0" velocity="100"/>
+  </joint>
+
+  <joint name="none2" type="prismatic">
+    <axis xyz="0 1 0"/>
+    <origin xyz="-0.75 0 2"/>
+    <parent link="pole"/>
+    <child link="pole_part2"/>
+    <limit effort="1000.0" lower="0" upper="0" velocity="100"/>
+  </joint>
+
+  <joint name="none3" type="prismatic">
+    <axis xyz="0 1 0"/>
+    <origin xyz="-0.75 1.5 0.5"/>
+    <parent link="pole"/>
+    <child link="pole_part3"/>
+    <limit effort="1000.0" lower="0" upper="0" velocity="100"/>
+  </joint>
+
+  <joint name="none4" type="prismatic">
+    <axis xyz="0 1 0"/>
+    <origin xyz="-0.75 -1.5 0.5"/>
+    <parent link="pole"/>
+    <child link="pole_part4"/>
+    <limit effort="1000.0" lower="0" upper="0" velocity="100"/>
+  </joint>
+  
+</robot>
+

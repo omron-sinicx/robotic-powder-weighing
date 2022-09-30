@@ -1,0 +1,13 @@
+実機ロボット動作手順：
+
+1)catkin_ws内のROSパッケージをbuildする
+
+2)はかりの設定
+- Check USB port name(ex: /dev/ttyUSB or COM2)
+- Set Format to 5
+- Set unit to mg
+- sudo chmod a+rw /dev/ttyUSB0
+
+3)シミュレーション方策の転移実験のコード実行
+cd powder_task
+python3 PowderEnvironmentController.py --test --dir ./方策のディレクトリ/Policy.pth

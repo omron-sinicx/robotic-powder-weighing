@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+
+<robot name="soil_tub">
+
+  <link concave="yes" name="soil_tub_link">
+    <visual>
+      <geometry>
+        <mesh filename="package://soil_tub_description/meshes/visual/soil_tub.dae" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <origin rpy="-1.57 0 0" xyz="0 0 0"/>
+    </visual>
+    <collision>
+      <geometry>
+        <mesh filename="package://soil_tub_description/meshes/collision/soil_tub.stl" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <origin rpy="-1.57 0 0" xyz="0 0 0"/>
+    </collision>
+  </link>
+
+</robot>
+

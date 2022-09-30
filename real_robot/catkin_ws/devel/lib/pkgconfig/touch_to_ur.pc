@@ -1,0 +1,8 @@
+prefix=/home/yuki-kadokawa/catkin_ws/devel
+
+Name: touch_to_ur
+Description: Description of touch_to_ur
+Version: 0.0.0
+Cflags: 
+Libs: -L${prefix}/lib -ltouch_to_ur
+Requires: message_runtime roscpp rospy std_msgs
