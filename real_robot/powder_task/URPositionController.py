@@ -2,10 +2,9 @@
 # -*- coding: utf-8 -*-
 
 import socket
-import time
-import sys
-import pygame
-import numpy as np
+
+PC_IP_ADDRESS = "XXX.XXX.XXX.XXX"
+ROBOT_IP_ADDRESS = "YYY.YYY.YYY.YYY"
 
 
 class URPositionController:
@@ -14,9 +13,8 @@ class URPositionController:
 
     def config_ur_socket(self):
         self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        HOST = "192.168.11.5"
         PORT = 30003
-        self.s.connect((HOST, PORT))
+        self.s.connect((ROBOT_IP_ADDRESS, PORT))
 
     def toBytes(self, str):
         return bytes(str.encode())
@@ -67,14 +65,6 @@ class URPositionController:
         )
 
     def main(self):
-        """
-        x
-        y
-        z:上がプラス
-        rx:ロボット方向
-        ry:すくう方向
-        rz
-        """
         self.move(action=[0, 0, 0.001, 0, 0, 0])
 
 

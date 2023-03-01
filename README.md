@@ -52,3 +52,17 @@ All parameters are bellow.
 - gravity_flag
 
 render means learning with rendering the environment or not.
+
+### test policies on real robot
+1. build up ros packages in catkin_ws
+2. set up weighing machine
+   - connect data cable from PC to the machine.
+   - check USB port name(ex: /dev/ttyUSB or COM2)
+   - set Format to 5 of weighing machine
+   - set unit to mg of weighing machine
+   - sudo chmod a+rw /dev/ttyUSB0
+3. run the robot with learned policies
+```
+cd real_robot/powder_task
+python PowderEnvironmentController.py --test --dir ./policy_directly/Policy.pth
+```

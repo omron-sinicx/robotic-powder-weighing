@@ -3,9 +3,11 @@
 
 import socket
 import time
-import sys
 import pygame
-from control_joy import JoyController
+from ...simulation.Environment.Weighing.control_joy import JoyController
+
+PC_IP_ADDRESS = "XXX.XXX.XXX.XXX"
+ROBOT_IP_ADDRESS = "YYY.YYY.YYY.YYY"
 
 
 class UR_EE_Control:
@@ -15,9 +17,8 @@ class UR_EE_Control:
 
     def config_ur_socket(self):
         self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        HOST = "192.168.11.5"
         PORT = 30002
-        self.s.connect((HOST, PORT))
+        self.s.connect((ROBOT_IP_ADDRESS, PORT))
 
     def config_joy(self):
         pygame.init()

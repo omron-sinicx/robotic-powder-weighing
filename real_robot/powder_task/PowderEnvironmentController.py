@@ -1,20 +1,19 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-
 import time
 import socket
-import pygame
-import sys
 import numpy as np
 import torch
 
 from ScaleITX120Interface import ScaleITX120Interface
 from URPositionController import URPositionController
-from UserDefinedSettings import UserDefinedSettings  # noqa
+from ...simulation.UserDefinedSettings import UserDefinedSettings
+from ...simulation.SAC.Actor.ActorLSTM import ActorLSTM
 
-sys.path.append("../../Nextcloud/code/deepRL/distillation_proposed")  # noqa
-from SAC.Actor.ActorLSTM import ActorLSTM  # noqa
+
+PC_IP_ADDRESS = "XXX.XXX.XXX.XXX"
+ROBOT_IP_ADDRESS = "YYY.YYY.YYY.YYY"
 
 
 class PowderEnvironmentController:
@@ -27,16 +26,11 @@ class PowderEnvironmentController:
         self.actor = ActorLSTM(STATE_DIM=3, ACTION_DIM=2, userDefinedSettings=self.userDefinedSettings)
         self.load_model(self.userDefinedSettings.TEST_DIR)
 
-        self.action_type = 'relative'
         self.action_space = Action_space(action_type=self.action_type)
 
     def load_model(self, path):
         self.actor.policyNetwork.load_state_dict(torch.load(path, map_location=torch.device(self.userDefinedSettings.DEVICE)))
         self.actor.policyNetwork.eval()
-
-    def config_camera(self):
-        from RealsenseController_AddRGBImage import RealsenseController
-        self.realsenseController = RealsenseController()
 
     def config_position_control(self):
         self.positionController = URPositionController()
@@ -46,12 +40,11 @@ class PowderEnvironmentController:
 
     def config_ur_socket(self):
         self.config_server()
-        self.HOST = "192.168.11.2"  # remote host
-        self.PORT = 30002  # UR port
+        self.PORT = 30002
 
         self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self.s.bind((self.HOST, self.PORT))
+        self.s.bind((PC_IP_ADDRESS, self.PORT))
         self.s.listen(5)
         self.c, self.addr = self.s.accept()
 
@@ -59,11 +52,10 @@ class PowderEnvironmentController:
         with open("./move_ee_without_force.script", "r") as file:
             prog = file.read()
 
-        HOST = "192.168.11.5"
         PORT = 30001
 
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.connect((HOST, PORT))
+        s.connect((ROBOT_IP_ADDRESS, PORT))
         s.send(self.toBytes(prog))
 
     def toBytes(self, str):
@@ -80,7 +72,6 @@ class PowderEnvironmentController:
         state_dict = {
             "ee_pose": eval(state_list[0]),
             "joints": eval(state_list[1]),
-            # "force": eval(state_list[2]),
         }
         return state_dict
 
@@ -107,9 +98,8 @@ class PowderEnvironmentController:
         self.c.close()
         self.s.close()
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        HOST = "192.168.11.5"
         PORT = 30002
-        s.connect((HOST, PORT))
+        s.connect((ROBOT_IP_ADDRESS, PORT))
         base = -2.46
         shoulder = -70.46
         elbow = 90.74
@@ -124,14 +114,6 @@ class PowderEnvironmentController:
         self.config_ur_socket()
 
     def move_position_control(self, action=[0.0, 0.0, 0.0, 0.0, 0.0, 0.0], velocity=0.1, timer=1., config_flag=True):
-        """
-        x
-        y
-        z:上がプラス
-        rx:ロボット方向
-        ry:すくう方向がマイナス
-        rz
-        """
         self.c.close()
         self.s.close()
         self.positionController.move(action, velocity=velocity)
@@ -172,9 +154,8 @@ class PowderEnvironmentController:
 
     def calc_reward(self):
         self.current_ball_amount = self.get_scale()
-        target_ball_amount = 0.005  # [g]
         reward_scaling = 1000.
-        reward = -np.abs(self.current_ball_amount - target_ball_amount) * reward_scaling
+        reward = -np.abs(self.current_ball_amount - self.goal_powder_amount) * reward_scaling
         return reward, self.current_ball_amount
 
     def get_action(self, state, step_num):
@@ -184,9 +165,6 @@ class PowderEnvironmentController:
         return action_x, action_r
 
     def mapping_action(self, action):
-        """
-        入力される行動の範囲が-1から+1であることを仮定
-        """
         assert (action.any() >= -1) and (action.any() <= 1), 'expected actions are \"-1 to +1\". input actions are {}'.format(action)
         low = self.action_space.low
         high = self.action_space.high
@@ -195,44 +173,33 @@ class PowderEnvironmentController:
         return action
 
     def shake_spoon(self, action_x):
-        distance = 0.003
+        distance_scale = 0.003
         velocity_scale = 0.1
-        push_time = 0.06
         self.c.close()
         self.s.close()
-        self.positionController.move([distance * action_x, 0, 0, 0, 0, 0], velocity=action_x * velocity_scale)
-        time.sleep(push_time)
-        self.positionController.move([-distance * 0.3 * action_x, 0, 0, 0, 0, 0], velocity=action_x * velocity_scale)
-        time.sleep(1)
+        self.positionController.move([distance_scale * action_x, 0, 0, 0, 0, 0], velocity=action_x * velocity_scale)
+        time.sleep(0.1)
+        self.positionController.move([-distance_scale * 0.3 * action_x, 0, 0, 0, 0, 0], velocity=action_x * velocity_scale)
+        time.sleep(0.1)
         self.config_ur_socket()
 
     def incline_spoon(self, action_r):
-        """
-        rは落とす方向がマイナスで初期が0
-        """
-        action_weight = 1.
-        self.move_position_control(action=[0, 0, 0, 0, action_r * action_weight, 0], velocity=0.02, timer=5.)
+        self.move_position_control(action=[0, 0, 0, 0, action_r, 0], velocity=0.02, timer=5.)
 
     def get_observation(self):
         state = np.array([self.current_ball_amount * 500., self.current_rad * 30., self.goal_powder_amount * 500.]).reshape(-1)
         return state
 
     def do_experiments(self):
-        """
-        スプーンの粉を落とす方向がマイナスで単位はrad
-        """
         initial_rad = -10. * np.pi / 180.
-        total_step_num = 6  # 10
-        self.goal_powder_amount = 0.005  # 0.005
+        total_step_num = 10
+        self.goal_powder_amount = 0.005
         inline_flag = True
         shake_flag = True
 
         self.move_init_position()
         self.stir_powder()
         self.get_powder()
-        self.move_position_control(action=[0, 0, 0.03, 0, 0, 0])  # go to camera position
-        self.move_position_control(action=[-0.007, 0, 0, 0, 0, 0])  # go to camera position
-        self.go_to_certain_position()  # go to 10 degree
 
         self.current_rad = initial_rad
         reward, self.current_ball_amount = self.calc_reward()
@@ -241,23 +208,18 @@ class PowderEnvironmentController:
         for step in range(total_step_num):
             action_x, action_r = self.get_action(state, step)
             if inline_flag:
-                if self.action_type == 'absolute':
-                    bias = 0.
-                    self.incline_spoon(action_r - self.current_rad + bias)  # 絶対座標で入力
-                    self.current_rad = action_r
+                if self.current_rad + action_r > -10. * np.pi / 180.:
+                    print('action', action_r * 180. / np.pi, 'low')
+                    action_r = -10. * np.pi / 180. - self.current_rad
+                    self.current_rad = -10. * np.pi / 180.
+                elif self.current_rad + action_r < -30. * np.pi / 180.:
+                    print('action', action_r * 180. / np.pi, 'high')
+                    action_r = -30. * np.pi / 180. - self.current_rad
+                    self.current_rad = -30. * np.pi / 180.
                 else:
-                    if self.current_rad + action_r > -10. * np.pi / 180.:
-                        print('action', action_r * 180. / np.pi, 'low')
-                        action_r = -10. * np.pi / 180. - self.current_rad
-                        self.current_rad = -10. * np.pi / 180.
-                    elif self.current_rad + action_r < -30. * np.pi / 180.:
-                        print('action', action_r * 180. / np.pi, 'high')
-                        action_r = -30. * np.pi / 180. - self.current_rad
-                        self.current_rad = -30. * np.pi / 180.
-                    else:
-                        self.current_rad += action_r
-                        print('action', action_r * 180. / np.pi, 'range')
-                    self.incline_spoon(action_r)  # 相対座標で入力
+                    self.current_rad += action_r
+                    print('action', action_r * 180. / np.pi, 'range')
+                self.incline_spoon(action_r)
             print('degree', self.current_rad * 180. / np.pi)
 
             if shake_flag:
@@ -270,52 +232,14 @@ class PowderEnvironmentController:
             print('x:{:.3f} | r:{:.3f}'.format(action_x, action_r))
         print('total_reward:', total_reward)
 
-        self.move_position_control(action=[10, 0, 0, 0, 0, 0], velocity=0.02, timer=6.1)  # go to camera position
-        self.move_position_control(action=[0.1, 0, 0, 0, -90. * np.pi / 180., 0], velocity=0.1, timer=3)  # go to 10 degree
-
-    def do_test(self):
-        """
-        スプーンの粉を落とす方向がマイナスで単位はrad
-        """
-        # self.move_init_position()
-        self.get_ee_pose()
-        sys.exit()
-        for i in range(3):
-            self.move_position_control(action=[0, 0, 0, 0, 5 * np.pi / 180., 0], velocity=0.01, timer=10.)  # go to 10 degree
-            self.get_ee_pose()
-
-    def go_to_certain_position(self):
-        target = -75. * np.pi / 180.  # 10 degree
-        gap = 0.3 * np.pi / 180.   # 0.3 degree
-
-        while(True):
-            current = self.get_ee_pose()
-            move = target - current
-            print(move)
-            if np.abs(move) > gap:
-                self.move_position_control(action=[0, 0, 0, 0, move, 0], velocity=0.02, timer=2.)  # go to 10 degree
-            else:
-                break
-
-    def shake_test(self):
-        for _ in range(5):
-            self.shake_spoon(0.1)
-            self.shake_spoon(0.5)
-            self.shake_spoon(1)
-
 
 class Action_space:
-    def __init__(self, action_type='absolute'):
-        if action_type == 'absolute':
-            self.low = np.array([0., -30. * np.pi / 180.])
-            self.high = np.array([1., -10. * np.pi / 180.])
-        else:
-            self.low = np.array([0., -3. * np.pi / 180.])
-            self.high = np.array([1., 3. * np.pi / 180.])
+    def __init__(self):
+        self.low = np.array([0., -3. * np.pi / 180.])
+        self.high = np.array([1., 3. * np.pi / 180.])
         self.ACTION_DIM = len(self.high)
 
     def sample(self):
-        # 行動は-1から+1であることを仮定
         action = np.random.rand()
         action = 2. * (action - 0.5)
         return action

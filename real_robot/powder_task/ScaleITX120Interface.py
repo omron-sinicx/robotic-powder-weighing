@@ -68,13 +68,13 @@ class ScaleITX120Interface(object):
             while True:
                 buf = self._port.readline()
                 # TODO change try parse
-                if(len(buf) == 17):
+                if (len(buf) == 17):
                     self._stable = buf[0: 1].decode('ascii')
                     self._unit = buf[13: 15].decode('ascii')  # Expected mg
-                    if(self._unit == 'mg'):
+                    if (self._unit == 'mg'):
                         self._value = float(buf[3:12].decode('ascii'))
                         self._count = 0
-                    elif(buf[8:10].decode('ascii') == 'OL'):
+                    elif (buf[8:10].decode('ascii') == 'OL'):
                         self._value = 2000000.0
                     else:
                         print(buf[8:11].decode('ascii'))
@@ -94,13 +94,13 @@ class ScaleITX120Interface(object):
                 self._port.reset_input_buffer()
                 buf = self._port.readline()
                 # TODO change try parse
-                if(len(buf) == 17):
+                if (len(buf) == 17):
                     self._stable = buf[0: 1].decode('ascii')
                     self._unit = buf[13: 15].decode('ascii')  # Expected mg
-                    if(self._unit == 'mg'):
+                    if (self._unit == 'mg'):
                         self._value = float(buf[3:12].decode('ascii'))
                         self._count = 0
-                    elif(buf[8:10].decode('ascii') == 'OL'):
+                    elif (buf[8:10].decode('ascii') == 'OL'):
                         self._value = 2000000.0
                     else:
                         print(buf[8:11].decode('ascii'))
@@ -132,7 +132,6 @@ def test1():
 def test2():
     scale = ScaleITX120Interface(port="/dev/ttyUSB0")
     scale.readValue()
-    # scale.setZero()
 
 
 if __name__ == '__main__':
