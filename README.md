@@ -1,6 +1,6 @@
 # robotic-powder-weighting
 
-![sim](fig/sim2real.png "Overview of simulator")
+<img src="fig/sim2real.png" width="320px">
 
 ## Getting started
 
