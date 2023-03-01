@@ -2,7 +2,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.distributions import Normal
-# import torch.optim as optim
 import numpy as np
 
 
@@ -58,7 +57,7 @@ class PolicyNetworkLSTM(nn.Module):
         # branch 2
         lstm_branch = torch.cat([state, last_action], -1)
         lstm_branch = F.relu(self.linear2(lstm_branch))
-        lstm_branch, hidden_out = self.lstm1(lstm_branch, hidden_in)  # no activation after lstm
+        lstm_branch, hidden_out = self.lstm1(lstm_branch, hidden_in)
         # merged
         merged_branch = torch.cat([fc_branch, lstm_branch], -1)
         x = F.relu(self.linear3(merged_branch))
@@ -74,16 +73,13 @@ class PolicyNetworkLSTM(nn.Module):
 
         epsilon = 1e-6
         mean, log_std, hidden_out = self.forward(state, last_action, hidden_in)
-        std = log_std.exp()  # no clip in evaluation, clip affects gradients flow
+        std = log_std.exp()
 
         normal = Normal(0, 1)
         z = normal.sample(mean.shape)
         deterministic_action = torch.tanh(mean)
-        action = torch.tanh(mean + std * z.to(self.userDefinedSettings.DEVICE))  # TanhNormal distribution as actions; reparameterization trick
+        action = torch.tanh(mean + std * z.to(self.userDefinedSettings.DEVICE))
         log_prob = Normal(mean, std).log_prob(mean + std * z.to(self.userDefinedSettings.DEVICE)) - torch.log(1. - action.pow(2) + epsilon)
-        # both dims of normal.log_prob and -log(1-a**2) are (N,dim_of_action);
-        # the Normal.log_prob outputs the same dim of input features instead of 1 dim probability,
-        # needs sum up across the features dim to get 1 dim prob; or else use Multivariate Normal.
         log_prob = log_prob.sum(dim=-1, keepdim=True)
 
         return action, log_prob, std, deterministic_action, hidden_out
@@ -93,7 +89,7 @@ class PolicyNetworkLSTM(nn.Module):
         return action
 
     def format_numpy2torch(self, data):
-        return torch.FloatTensor(data).unsqueeze(0).unsqueeze(0).to(self.userDefinedSettings.DEVICE)  # numpy[N] -> torch[1,1,N]
+        return torch.FloatTensor(data).unsqueeze(0).unsqueeze(0).to(self.userDefinedSettings.DEVICE)
 
     def format_torch2numpy(self, data):
-        return data.detach().cpu().numpy()[0][0]  # torch[1,1,N] -> numpy[N]
+        return data.detach().cpu().numpy()[0][0]

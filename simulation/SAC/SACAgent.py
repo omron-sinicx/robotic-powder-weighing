@@ -28,26 +28,33 @@ class SACAgent(object):
         self.totalRewardService = TotalRewardService(self.userDefinedSettings)
         self.taskAchivementService = ProgressChecker(self.userDefinedSettings)
 
+        self.current_episode_num = self.userDefinedSettings.current_episode_num
+
     def train(self, domain_num=None, expert_value_function=None, expert_policy=None):
         self.model_dir = os.path.join(self.userDefinedSettings.LOG_DIRECTORY, 'model', str(domain_num))
         self.summary_dir = os.path.join(self.userDefinedSettings.LOG_DIRECTORY, 'summary', str(domain_num))
 
         self.summaryWriter = SummaryWriter(log_dir=self.summary_dir)
-        self.summary_writer_count = 0
+
+        if self.current_episode_num != 0:
+            self.load_model(self.model_dir)
+            self.load_dataset()
+        else:
+            self.summary_writer_count = 0
 
         if not os.path.exists(self.model_dir):
             os.makedirs(self.model_dir)
         if not os.path.exists(self.summary_dir):
             os.makedirs(self.summary_dir)
 
-        total_step_num = 0
-        for episode_num in range(self.userDefinedSettings.learning_episode_num):
+        for episode_num in range(self.current_episode_num, self.current_episode_num + self.userDefinedSettings.learning_episode_num):
 
             if episode_num < self.userDefinedSettings.policy_update_start_episode_num and expert_policy is not None:
                 get_action_fn = expert_policy.get_action
             else:
                 get_action_fn = self.actor.get_action
 
+            self.env.domainInfo.set_parameters()
             state = self.env.reset()
 
             total_reward = 0.
@@ -65,20 +72,22 @@ class SACAgent(object):
                     for _ in range(self.userDefinedSettings.updates_per_step):
                         self.update(self.userDefinedSettings.batch_size, expert_value_function=expert_value_function, episode_num=episode_num)
 
-                total_step_num += 1
                 if done:
                     break
 
-            is_achieve_peak = self.totalRewardService.trainPeakChecker.append_and_check(total_reward)
-            if is_achieve_peak:
-                print('Episode: {:>5} | Episode Reward: {:>8.2f}| model updated!!'.format(episode_num, total_reward))
-                self.save_model()
-            else:
-                print('Episode: {:>5} | Episode Reward: {:>8.2f}| model keep'.format(episode_num, total_reward))
+            print('Episode: {:>5} | Episode Reward: {:>8.2f}| model updated!!'.format(episode_num, total_reward))
+            self.save_model()
             self.summaryWriter.add_scalar('status/train reward', total_reward, episode_num)
-            self.itemDebugHandler.add_item('train_avarage_reward', total_reward)
-            self.itemDebugHandler.add_item('task_achievement', task_achievement)
-            self.itemDebugHandler.save_items()
+
+        self.save_dataset(self.current_episode_num + self.userDefinedSettings.learning_episode_num)
+
+    def save_dataset(self, batch_size):
+        batch = self.replay_buffer.sample(sampling_method='all', get_debug_term_flag=True)
+        torch.save(batch, os.path.join(self.model_dir, 'dataset.pth'))
+
+    def load_dataset(self):
+        batch_data = torch.load(os.path.join(self.model_dir, 'dataset.pth'))
+        self.replay_buffer.add_from_other(batch_data=batch_data)
 
     def sample_dataset(self, replay_buffer, sample_episode_num=1):
         for episode_num in range(sample_episode_num):
@@ -106,6 +115,7 @@ class SACAgent(object):
         batch = self.replay_buffer.sample(batch_size)
         state, action, reward, next_state, done, lstm_info, domain_parameter = batch
 
+        # Updating entropy term
         _, log_prob, std = self.actor.evaluate(state)
         predict_entropy = -log_prob
         entropy_loss = self.entropyTerm.update(predict_entropy.detach())
@@ -146,6 +156,7 @@ class SACAgent(object):
         predict_entropy = -log_prob
         entropy_loss = self.entropyTerm.update(predict_entropy.detach())
         self.summaryWriter.add_scalar('status/standard deviation', std.detach().mean().item(), self.summary_writer_count)
+        print(self.summary_writer_count)
         self.summaryWriter.add_scalar('loss/entropy', entropy_loss.detach().item(), self.summary_writer_count)
 
         # Training Q Function
@@ -153,7 +164,7 @@ class SACAgent(object):
         q1_loss, q2_loss, predicted_q1, predicted_q2 = self.critic.update(state, action, reward, next_state, done,
                                                                           lstm_term, new_next_action.detach(),
                                                                           next_log_prob.detach(), self.entropyTerm.alpha.detach(),
-                                                                          domain_parameter)
+                                                                          domain_parameter, actor=self.actor, episode_num=episode_num)
         self.summaryWriter.add_scalar('status/Q1', predicted_q1.detach().mean().item(), self.summary_writer_count)
         self.summaryWriter.add_scalar('status/Q2', predicted_q2.detach().mean().item(), self.summary_writer_count)
         self.summaryWriter.add_scalar('loss/Q1', q1_loss.detach().item(), self.summary_writer_count)
@@ -176,7 +187,11 @@ class SACAgent(object):
             self.model_dir = model_dir
         torch.save(self.critic.soft_q_net1.state_dict(), os.path.join(self.model_dir, 'Q1.pth'))
         torch.save(self.critic.soft_q_net2.state_dict(), os.path.join(self.model_dir, 'Q2.pth'))
+        torch.save(self.critic.target_soft_q_net1.state_dict(), os.path.join(self.model_dir, 'target_Q1.pth'))
+        torch.save(self.critic.target_soft_q_net2.state_dict(), os.path.join(self.model_dir, 'target_Q2.pth'))
         torch.save(self.actor.policyNetwork.state_dict(), os.path.join(self.model_dir, 'Policy.pth'))
+        torch.save(self.entropyTerm.log_alpha, os.path.join(self.model_dir, 'Entropy.pth'))
+        torch.save(self.summary_writer_count, os.path.join(self.model_dir, 'summary_writer_count.pth'))
 
     def load_model(self, path=None, load_only_policy=False):
         if path is not None:
@@ -185,11 +200,12 @@ class SACAgent(object):
         if not load_only_policy:
             self.critic.soft_q_net1.load_state_dict(torch.load(os.path.join(self.model_dir, 'Q1.pth'), map_location=torch.device(self.userDefinedSettings.DEVICE)))
             self.critic.soft_q_net2.load_state_dict(torch.load(os.path.join(self.model_dir, 'Q2.pth'), map_location=torch.device(self.userDefinedSettings.DEVICE)))
-            self.critic.soft_q_net1.eval()
-            self.critic.soft_q_net2.eval()
+            self.critic.target_soft_q_net1.load_state_dict(torch.load(os.path.join(self.model_dir, 'target_Q1.pth'), map_location=torch.device(self.userDefinedSettings.DEVICE)))
+            self.critic.target_soft_q_net2.load_state_dict(torch.load(os.path.join(self.model_dir, 'target_Q2.pth'), map_location=torch.device(self.userDefinedSettings.DEVICE)))
+            self.entropyTerm.log_alpha = torch.load(os.path.join(self.model_dir, 'Entropy.pth'))
+            self.summary_writer_count = torch.load(os.path.join(self.model_dir, 'summary_writer_count.pth'))
 
         self.actor.policyNetwork.load_state_dict(torch.load(os.path.join(self.model_dir, 'Policy.pth'), map_location=torch.device(self.userDefinedSettings.DEVICE)))
-        self.actor.policyNetwork.eval()
 
     def test(self, model_path=None, policy=None, domain_num=None, test_num=5, render_flag=True, reward_show_flag=True):
         if model_path is not None:
@@ -203,6 +219,7 @@ class SACAgent(object):
         total_reward_list = []
         task_achievement_list = []
         for episode_num in range(test_num):
+            self.env.domainInfo.set_parameters()
             state = self.env.reset()
             total_reward = 0.
 
@@ -218,7 +235,6 @@ class SACAgent(object):
                 next_state, reward, done, _, task_achievement = self.env.step(action, get_task_achievement=True)
                 state = next_state
                 total_reward += reward
-                # print('reward', reward)
                 if done:
                     break
 

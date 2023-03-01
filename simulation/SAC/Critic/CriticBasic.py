@@ -21,8 +21,8 @@ class CriticBasic(object):
         for target_param, param in zip(self.target_soft_q_net2.parameters(), self.soft_q_net2.parameters()):
             target_param.data.copy_(param.data)
 
-        self.soft_q_criterion1 = nn.MSELoss()
-        self.soft_q_criterion2 = nn.MSELoss()
+        self.soft_q_criterion1 = nn.SmoothL1Loss()
+        self.soft_q_criterion2 = nn.SmoothL1Loss()
 
         self.soft_q_optimizer1 = optim.Adam(self.soft_q_net1.parameters(), lr=self.userDefinedSettings.lr)
         self.soft_q_optimizer2 = optim.Adam(self.soft_q_net2.parameters(), lr=self.userDefinedSettings.lr)
@@ -42,6 +42,12 @@ class CriticBasic(object):
             target_param.data.copy_(target_param.data * (1.0 - self.userDefinedSettings.soft_update_rate) + param.data * self.userDefinedSettings.soft_update_rate)
         for target_param, param in zip(self.target_soft_q_net2.parameters(), self.soft_q_net2.parameters()):
             target_param.data.copy_(target_param.data * (1.0 - self.userDefinedSettings.soft_update_rate) + param.data * self.userDefinedSettings.soft_update_rate)
+
+    def hard_update(self):
+        for target_param, param in zip(self.target_soft_q_net1.parameters(), self.soft_q_net1.parameters()):
+            target_param.data.copy_(param.data)
+        for target_param, param in zip(self.target_soft_q_net2.parameters(), self.soft_q_net2.parameters()):
+            target_param.data.copy_(param.data)
 
     def update(self, state, action, reward, next_state, done, new_next_action, next_log_prob, alpha, domain_parameter, expert_value_function=None, episode_num=None):
         predict_target_q1 = self.target_soft_q_net1(next_state, new_next_action, domain_parameter)

@@ -2,7 +2,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.distributions import Normal
-# import torch.optim as optim
 import numpy as np
 
 
@@ -54,16 +53,13 @@ class PolicyNetworkBasic(nn.Module):
     def calc_policy(self, state):
         epsilon = 1e-6
         mean, log_std = self.forward(state)
-        std = log_std.exp()  # no clip in evaluation, clip affects gradients flow
+        std = log_std.exp()
 
         normal = Normal(0, 1)
         z = normal.sample(mean.shape)
         deterministic_action = torch.tanh(mean)
-        action = torch.tanh(mean + std * z.to(self.userDefinedSettings.DEVICE))  # TanhNormal distribution as actions; reparameterization trick
+        action = torch.tanh(mean + std * z.to(self.userDefinedSettings.DEVICE))
         log_prob = Normal(mean, std).log_prob(mean + std * z.to(self.userDefinedSettings.DEVICE)) - torch.log(1. - action.pow(2) + epsilon)
-        # both dims of normal.log_prob and -log(1-a**2) are (N,dim_of_action);
-        # the Normal.log_prob outputs the same dim of input features instead of 1 dim probability,
-        # needs sum up across the features dim to get 1 dim prob; or else use Multivariate Normal.
         log_prob = log_prob.sum(dim=-1, keepdim=True)
 
         return action, log_prob, std, deterministic_action

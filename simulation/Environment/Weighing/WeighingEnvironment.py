@@ -1,22 +1,16 @@
 import numpy as np
-import subprocess
 from isaacgym import gymutil
 from isaacgym import gymapi
 import os
 import torch
 import gc
 import cv2
-import glob
 
 from .WeighingDomainInfo import WeighingDomainInfo
 from .BallGenerator import BallGenerator
 
 
 class WeighingEnvironment:
-    """
-    ランダマイズ無しで150エピソードあれば学習十分
-    """
-
     def __init__(self, userDefinedSettings=None, domain_range=None, create_env_flag=True, parameters=None):
         if userDefinedSettings is not None:
             self.userDefinedSettings = userDefinedSettings
@@ -24,7 +18,8 @@ class WeighingEnvironment:
             self.save_image_flag = userDefinedSettings.save_image
 
         self.assets_path = "./Environment/Weighing/"
-        self.between_ball_space = 0.03  # bigger than radius in URDF, r=0.01 -> 0.03
+        self.urdf_dir = 'Environment/Weighing/assets/urdf/spoon/'
+        self.between_ball_space = 0.03
         self.initial_height_ball_pyramid = 2.5
         self.initial_height_spoon = 2
         self.spoon_size_rate = 0.05
@@ -32,87 +27,32 @@ class WeighingEnvironment:
         self.ball_ground_threshold_height = self.initial_height_spoon - 0.5
         self.action_loop_num_per_step = 60
         self.world_size_rate = 2.
-        self.mass_gap_sim_rate = 0.5  # シミュレータの見た目と実際の粉体の重さのギャップを埋めるために報酬とゴールに利用
+        self.mass_gap_sim_rate = 0.5
 
         self.gym_package_args = gymutil.parse_arguments(
             description="Collision Filtering: Demonstrates filtering of collisions within and between environments",
             custom_parameters=[
-                {
-                    "name": "--num_envs",
-                    "type": int,
-                    "default": 36,
-                    "help": "Number of environments to create",
-                },
-                {
-                    "name": "--all_collisions",
-                    "action": "store_true",
-                    "help": "Simulate all collisions",
-                },
-                {
-                    "name": "--no_collisions",
-                    "action": "store_true",
-                    "help": "Ignore all collisions",
-                },
-                {
-                    "name": "--env",
-                    "type": str,
-                    "help": "Ignore",
-                },
-                {
-                    "name": "--test",
-                    "action": "store_true",
-                    "help": "Ignore",
-                },
-                {
-                    "name": "--render",
-                    "action": "store_true",
-                    "help": "Ignore",
-                },
-                {
-                    "name": "--save_image",
-                    "action": "store_true",
-                    "help": "Ignore",
-                },
-                {
-                    "name": "--dir",
-                    "type": str,
-                    "help": "Ignore",
-                },
-                {
-                    "name": "--notDR",
-                    "action": "store_true",
-                    "help": "Ignore",
-                },
-                {
-                    "name": "--ros",
-                    "action": "store_true",
-                    "help": "Ignore",
-                },
-                {
-                    "name": "--ros_id",
-                    "type": str,
-                    "help": "Ignore",
-                },
-                {
-                    "name": "--weighing",
-                    "type": list,
-                    "help": "Ignore",
-                },
-                {
-                    "name": "--gpu",
-                    "type": str,
-                    "help": "Ignore",
-                },
-                {
-                    "name": "--path",
-                    "type": str,
-                    "help": "Ignore",
-                }
+                {"name": "--num_envs", "type": int, "default": 36, "help": "Number of environments to create", },
+                {"name": "--all_collisions", "action": "store_true", "help": "Simulate all collisions", },
+                {"name": "--no_collisions", "action": "store_true", "help": "Ignore all collisions", },
+                {"name": "--env", "type": str, "help": "Ignore", },
+                {"name": "--test", "action": "store_true", "help": "Ignore", },
+                {"name": "--render", "action": "store_true", "help": "Ignore", },
+                {"name": "--save_image", "action": "store_true", "help": "Ignore", },
+                {"name": "--dir", "type": str, "help": "Ignore", },
+                {"name": "--notDR", "action": "store_true", "help": "Ignore", },
+                {"name": "--flag", "type": list, "help": "Ignore", },
+                {"name": "--gpu", "type": str, "help": "Ignore", },
+                {"name": "--path", "type": str, "help": "Ignore", },
+                {"name": "--episode", "type": str, "help": "Ignore", },
+                {"name": "--notLSTM", "type": str, "help": "Ignore", },
+                {"name": "--goal", "type": str, "help": "Ignore", },
+                {"name": "--top_num", "type": str, "help": "Ignore", }
             ],
         )
 
         if parameters is not None:
-            incline_flag, shake_flag, ball_radius_flag, ball_mass_flag, ball_friction_flag, ball_layer_num_flag, spoon_friction_flag, goal_powder_amount_flag, shake_speed_weight_flag, gravity_flag = parameters
+            incline_flag, shake_flag, ball_radius_flag, ball_mass_flag, ball_friction_flag, ball_layer_num_flag, spoon_friction_flag, goal_powder_amount_flag, shake_speed_weight_flag, gravity_flag = [int(i) for i in parameters]
             self.flag_list = [ball_radius_flag, ball_mass_flag, ball_friction_flag, ball_layer_num_flag, spoon_friction_flag, goal_powder_amount_flag, shake_speed_weight_flag, gravity_flag]
             self.incline_flag = bool(incline_flag)
             self.shake_flag = bool(shake_flag)
@@ -128,15 +68,15 @@ class WeighingEnvironment:
                   'gravity', gravity_flag)
 
         else:
-            self.incline_flag = True  # True
-            self.shake_flag = True  # True
+            self.incline_flag = True
+            self.shake_flag = True
             self.flag_list = None
 
         self.domainInfo = WeighingDomainInfo(userDefinedSettings=userDefinedSettings, domain_range=domain_range, flag_list=self.flag_list)
         self.DOMAIN_PARAMETER_DIM = self.domainInfo.get_domain_parameter_dim()
-        self.MAX_EPISODE_LENGTH = 10  # 10だと微調整には足りなそうだけど増やしても探索を行うようになったようには見えなかった．実機だと5くらいが勝手に落ちていかないので良さそう
+        self.MAX_EPISODE_LENGTH = 10
         self.ACTION_MAPPING_FLAG = True
-        self.action_type = 'relative'  # absolute, relative
+        self.action_type = 'relative'  # absolute or  relative
         self.action_space = Action_space(action_type=self.action_type, shake_flag=self.shake_flag)
         self.STATE_DIM = 3
         self.ACTION_DIM = self.action_space.ACTION_DIM
@@ -148,8 +88,6 @@ class WeighingEnvironment:
             self.ball_radius, self.ball_mass, self.ball_friction, self.ball_layer_num, self.spoon_friction, self.goal_powder_amount, self.shake_speed_weight, self.gravity = self.domainInfo.get_domain_parameters()
             self.create_sim_params()
             self.create_env()
-            # if self.save_image_flag:
-            #     self.create_render()
 
     def reset_world(self, reset_info):
         if self.render_flag:
@@ -161,22 +99,20 @@ class WeighingEnvironment:
         torch.cuda.empty_cache()
         self.domainInfo.set_parameters(reset_info=reset_info)
         self.ball_radius, self.ball_mass, self.ball_friction, self.ball_layer_num, self.spoon_friction, self.goal_powder_amount, self.shake_speed_weight, self.gravity = self.domainInfo.get_domain_parameters()
-        print('>>>>>>>>>>>>>>>>>> Goal: {:.4f} [mg] | Friction: {:.4f} | Mass: {:.5f} ##################'.format(self.goal_powder_amount, self.spoon_friction, self.ball_mass))
         self.create_sim_params()
         self.create_env()
         if self.save_image_flag:
             self.create_render()
 
     def create_sim_params(self):
-        # configure self.sim
         self.sim_params = gymapi.SimParams()
         self.sim_params.dt = 1 / float(self.action_loop_num_per_step)
         self.sim_params.gravity = gymapi.Vec3(0.0, self.gravity, 0.)
-        if self.gym_package_args.physics_engine == gymapi.SIM_FLEX:  # 液体
+        if self.gym_package_args.physics_engine == gymapi.SIM_FLEX:
             self.sim_params.flex.shape_collision_margin = 0.25
             self.sim_params.flex.num_outer_iterations = 4
             self.sim_params.flex.num_inner_iterations = 10
-        elif self.gym_package_args.physics_engine == gymapi.SIM_PHYSX:  # 剛体
+        elif self.gym_package_args.physics_engine == gymapi.SIM_PHYSX:
             self.sim_params.substeps = 1
             self.sim_params.physx.solver_type = 1
             self.sim_params.physx.num_position_iterations = 4
@@ -213,18 +149,16 @@ class WeighingEnvironment:
             self.gym_package.viewer_camera_look_at(
                 self.viewer,
                 None,
-                gymapi.Vec3(3, 3, -3),  # angle (forward/back) (top/down) (left/right)
-                gymapi.Vec3(1.5, 1.5, 5.5),  # position oku,z,yoko
+                gymapi.Vec3(3, 3, -3),
+                gymapi.Vec3(1.5, 1.5, 5.5),
             )
             self.gym_package.subscribe_viewer_keyboard_event(self.viewer, gymapi.KEY_R, "reset")
 
-        # set up the self.env grid
         num_per_row = 1
         env_spacing = 10
         env_lower = gymapi.Vec3(-env_spacing, 0.0, -env_spacing)
         env_upper = gymapi.Vec3(env_spacing, env_spacing, env_spacing)
 
-        # create self.env
         self.env = self.gym_package.create_env(self.sim, env_lower, env_upper, num_per_row)
         self.create_ball()
         self.create_plane()
@@ -232,57 +166,42 @@ class WeighingEnvironment:
         self.change_parameters()
         self.set_actor()
 
-        # create a local copy of initial state, which we can send back for reset
-        # self.initial_state = np.copy(self.gym_package.get_sim_rigid_body_states(self.sim, gymapi.STATE_ALL))
-
     def create_render(self):
-        # from PIL import Image as im
         camera_properties = gymapi.CameraProperties()
         self.image_width = 1920
         self.image_height = 1080
         camera_properties.width = self.image_width
         camera_properties.height = self.image_height
 
-        # Set a fixed position and look-target for the first camera
-        # position and target location are in the coordinate frame of the environment
         self.camera_handle = self.gym_package.create_camera_sensor(self.env, camera_properties)
         camera_position = gymapi.Vec3(0.5, 2.5, -0.5)  # yoko,z,oku
         camera_target = gymapi.Vec3(-2.5, 0, 2.5)
         self.gym_package.set_camera_location(self.camera_handle, self.env, camera_position, camera_target)
 
     def change_parameters(self):
-        # self.change_ball_property()
         self.change_spoon_friction()
 
     def render(self):
         pass
 
     def set_actor(self):
-        # Set DOF drive targets
         self.slider_x = self.gym_package.find_actor_dof_handle(self.env, self.spoon, "bucket_slider_x")
         self.slider_r = self.gym_package.find_actor_dof_handle(self.env, self.spoon, "bucket_joint_r")
 
     def create_plane(self):
-        """
-        plane_paramsの摩擦をいじると他の全部の値も変更されるようだ
-        """
         plane_params = gymapi.PlaneParams()
-        # self.plane_params.static_friction = 10.0
-        # self.plane_params.dynamic_friction = 10.0
         self.gym_package.add_ground(self.sim, plane_params)
 
     def create_ball(self):
         ballGenerator = BallGenerator()
-        urdf_dir = os.path.join(os.environ['HOME'], self.userDefinedSettings.HOST_NAME)
-        file_name = 'BallHLS' + self.userDefinedSettings.ros_id + '.urdf'
-        urdf_path = os.path.join(urdf_dir, file_name)
-        if not os.path.exists(urdf_dir):
-            os.makedirs(urdf_dir)
+        file_name = 'BallHLS.urdf'
+        urdf_path = os.path.join(self.urdf_dir, file_name)
+        if not os.path.exists(self.urdf_dir):
+            os.makedirs(self.urdf_dir)
 
         ballGenerator.generate(file_name=urdf_path, ball_radius=self.ball_radius, ball_mass=self.ball_mass)
-        asset = self.gym_package.load_asset(self.sim, urdf_dir, file_name, gymapi.AssetOptions())
+        asset = self.gym_package.load_asset(self.sim, self.urdf_dir, file_name, gymapi.AssetOptions())
 
-        # color code of brawn
         c = np.array([115, 78, 48]) / 255.0
         color = gymapi.Vec3(c[0], c[1], c[2])
 
@@ -295,7 +214,6 @@ class WeighingEnvironment:
         y = min_coord + self.initial_height_ball_pyramid
 
         self.ball_handle_list = []
-        # create ball pyramid
         while n > 0:
             z = min_coord
             for j in range(n):
@@ -303,17 +221,13 @@ class WeighingEnvironment:
                 for k in range(n):
                     pose.p = gymapi.Vec3(x, y, z)
 
-                    # collision
                     collision_group = 0
-                    collision_filter = 0  # 0 with collide, 1 without collide
+                    collision_filter = 0
 
                     ball_handle = self.gym_package.create_actor(self.env, asset, pose, None, collision_group, collision_filter)
 
                     body_shape_prop = self.gym_package.get_actor_rigid_shape_properties(self.env, ball_handle)
-                    body_shape_prop[0].friction = self.ball_friction  # def:1
-                    # body_shape_prop[0].rolling_friction = 100000.  # 回転 def:0
-                    # body_shape_prop[0].torsion_friction = 100000.  # ねじり def:0
-                    # body_shape_prop[0].restitution = 0.  # 反発係数 def:0 0以下にすることはできない=引力は表現できない
+                    body_shape_prop[0].friction = self.ball_friction
                     self.gym_package.set_actor_rigid_shape_properties(self.env, ball_handle, body_shape_prop)
 
                     self.ball_handle_list.append(ball_handle)
@@ -328,14 +242,10 @@ class WeighingEnvironment:
         self.all_ball_num = len(self.ball_handle_list)
 
     def change_ball_property(self):
-        """
-        これだと変更できない
-        リストにインスタンスではなく値が渡されているかも
-        """
-        ball_friction = 2.  # def:1
-        ball_restitution = 0.  # 反発係数 def:0
-        ball_rolling_friction = 2.  # def:0
-        ball_torsion_friction = 2.  # def:0
+        ball_friction = 2.
+        ball_restitution = 0.
+        ball_rolling_friction = 2.
+        ball_torsion_friction = 2.
         for ball_handle in self.ball_handle_list:
             body_shape_prop = self.gym_package.get_actor_rigid_shape_properties(self.env, ball_handle)
             for i in range(1):
@@ -345,12 +255,6 @@ class WeighingEnvironment:
                 body_shape_prop[i].friction = ball_friction
                 body_shape_prop[i].restitution = ball_restitution
             self.gym_package.set_actor_rigid_shape_properties(self.env, ball_handle, body_shape_prop)
-
-            ###
-            # body_shape_prop = self.gym_package.get_actor_rigid_shape_properties(self.env, ball_handle)
-            # import ipdb
-            # ipdb.set_trace()
-            ###
 
     def get_number_in_spoon(self):
         ball_in_spoon = 0
@@ -362,8 +266,6 @@ class WeighingEnvironment:
         return ball_in_spoon
 
     def create_spoon(self):
-        # load asset
-        urdf_dir = os.path.join(os.environ['HOME'], self.userDefinedSettings.HOST_NAME)
         file_name = 'spoon.urdf'
         asset_options = gymapi.AssetOptions()
         asset_options.fix_base_link = True
@@ -371,26 +273,17 @@ class WeighingEnvironment:
         asset_options.vhacd_params.resolution = 300000
         asset_options.vhacd_params.max_convex_hulls = 10
         asset_options.vhacd_params.max_num_vertices_per_ch = 64
-        asset = self.gym_package.load_asset(self.sim, urdf_dir, file_name, asset_options)
-
-        # collision
+        asset = self.gym_package.load_asset(self.sim, self.urdf_dir, file_name, asset_options)
         collision_group = 0
         collision_filter = 0
-
-        # color
         c = np.array([150, 150, 150]) / 255.0
         color = gymapi.Vec3(c[0], c[1], c[2])
-
-        # pose
         pose = gymapi.Transform()
         pose.r = gymapi.Quat(0, 0, 0, 1)
         pose.p = gymapi.Vec3(0, self.initial_height_spoon, 0)  # xzy
 
-        # joint?
         self.spoon = self.gym_package.create_actor(self.env, asset, pose, None, collision_group, collision_filter)
         self.gym_package.set_rigid_body_color(self.env, self.spoon, 0, gymapi.MESH_VISUAL_AND_COLLISION, color)
-
-        # Configure DOF properties
         props = self.gym_package.get_actor_dof_properties(self.env, self.spoon)
         self.gym_package.set_actor_scale(self.env, self.spoon, self.spoon_size_rate * self.world_size_rate)
 
@@ -459,10 +352,6 @@ class WeighingEnvironment:
             print('amount: {:.3f} [mg] | reward: {:.3f}'.format(current_ball_amount * 1e3, reward))
 
     def simulate_forward(self, time, sync_frame_time_flag=True):
-        """
-        1秒の行動を設計: action_loop_num_per_step
-        """
-
         for time_step in range(time):
             # step the physics
             self.gym_package.simulate(self.sim)
@@ -472,11 +361,9 @@ class WeighingEnvironment:
                 # update the viewer
                 self.gym_package.step_graphics(self.sim)
                 self.gym_package.draw_viewer(self.viewer, self.sim, True)
-
-                # Wait for dt to elapse in real time.
-                # This synchronizes the physics simulation with the rendering rate.
                 if sync_frame_time_flag:
                     self.gym_package.sync_frame_time(self.sim)
+                print('refresh')
 
             if time_step % 10 == 0:
                 self.make_image()
@@ -512,26 +399,20 @@ class WeighingEnvironment:
 
             if self.step_num == self.MAX_EPISODE_LENGTH - 1 and self.image_save_done is False:
                 self.image_save_done = True
-                size = (self.image_width, self.image_height)  # サイズ指定
-                fourcc = cv2.VideoWriter_fourcc('m', 'p', '4', 'v')  # 保存形式
+                size = (self.image_width, self.image_height)
+                fourcc = cv2.VideoWriter_fourcc('m', 'p', '4', 'v')
                 video_filename = os.path.join(os.environ['HOME'], self.userDefinedSettings.HOST_NAME, 'videos', str(self.video_count) + '.mp4')
-                save = cv2.VideoWriter(video_filename, fourcc, 10.0, size)  # 動画を保存する形を作成
+                save = cv2.VideoWriter(video_filename, fourcc, 10.0, size)
                 for img in self.image_list:
                     save.write(img)
-                save.release()  # ファイルを閉じる
+                save.release()
                 self.video_count += 1
                 self.image_list.clear()
 
     def incline_spoon(self, action_r, time=None):
-        """
-        rは落とす方向がマイナスで初期が0
-        """
         r_max = self.action_space.action_range['max']
         r_min = self.action_space.action_range['min']
         r = action_r
-        # x_pos = self.gym_package.get_dof_position(self.env, self.slider_x)
-        # r_pos = self.gym_package.get_dof_position(self.env, self.slider_r)
-        print(self.r_pos + r, '>', r_max, '|', self.r_pos + r, '<', r_min)
         if self.r_pos + r > r_max or self.r_pos + r < r_min:
             r = 0.
         self.gym_package.set_dof_target_position(self.env, self.slider_r, self.r_pos + r)
@@ -543,12 +424,7 @@ class WeighingEnvironment:
             self.simulate_forward(time=self.action_loop_num_per_step, sync_frame_time_flag=False)
 
     def incline_spoon_absolute(self, action_r, time=None):
-        """
-        rは落とす方向がマイナスで初期が0
-        """
         r = action_r
-        # x_pos = self.gym_package.get_dof_position(self.env, self.slider_x)
-        # r_pos = self.gym_package.get_dof_position(self.env, self.slider_r)
         self.gym_package.set_dof_target_position(self.env, self.slider_r, r)
 
         if time is not None:
@@ -575,22 +451,18 @@ class WeighingEnvironment:
                 self.incline_spoon(action_r)
         if self.shake_flag:
             self.shake_spoon(action_x)
+
         self.simulate_forward(time=self.action_loop_num_per_step * 3, sync_frame_time_flag=False)  # wait
         done = self.calc_done()
         reward, current_ball_amount = self.calc_reward()
         next_state = self.get_state()
         domain_parameter = None
 
-        if self.render_flag:
-            print('Amount: {:.4f} [g] | Reward: {:.3f}'.format(current_ball_amount * 1e3, reward))
-
         domain_parameter = self.domainInfo.get_domain_parameters()
-        task_achievement = current_ball_amount - self.goal_powder_amount
-        self.task_achievement = task_achievement
-        self.step_num += 1  # 終わってから追加
+        task_achievement = current_ball_amount
 
-        if self.step_num == self.MAX_EPISODE_LENGTH - 1:
-            print('<<<<<<<<<<<<<<<< Amount: {:.4f} [mg] ##################'.format(current_ball_amount))
+        self.task_achievement = task_achievement
+        self.step_num += 1
 
         if get_task_achievement is True:
             return next_state, reward, done, domain_parameter, task_achievement
@@ -609,59 +481,37 @@ class WeighingEnvironment:
         current_ball_amount = self.get_ball_amount()
         target_ball_amount = self.goal_powder_amount  # [g]
 
-        # print('goal_powder_amount:{}'.format(goal_powder_amount))
         reward_scaling = 1000.
         reward = -np.abs(current_ball_amount - target_ball_amount) * reward_scaling
 
-        # 効果微妙
         if np.abs(current_ball_amount - target_ball_amount) < 0.001:
             reward += 1.  # 1.
 
         return reward, current_ball_amount
 
     def reset(self, reset_info=None):
-        """
-        初期角度は10度にする=実機と揃えるため
-        """
-
         self.image_list = []
-
         self.reset_world(reset_info)
-        # self.gym_package.set_sim_rigid_body_states(self.sim, self.initial_state, gymapi.STATE_ALL)  # リセットコマンド，任意の状態に物体を遷移させる
         self.step_num = 0
         self.x_pos = self.gym_package.get_dof_position(self.env, self.slider_x)
         self.r_pos = self.gym_package.get_dof_position(self.env, self.slider_r)
         self.init_x_pos = self.x_pos
         self.init_r_pos = self.r_pos
-        self.incline_spoon(-10. * np.pi / 180., time=self.action_loop_num_per_step * 5)  # リセット後の粉体遷移の待ち
+        self.incline_spoon(-10. * np.pi / 180., time=self.action_loop_num_per_step * 5)
         state = self.get_state()
 
         self.image_list.clear()
 
         self.image_save_done = False
+        print(self.domainInfo.get_domain_parameters())
         return state
 
     def get_state(self):
-        """
-        current_ball_amountだと学習ができなかった
-        これは観測のスケールが小さすぎるからと推測
-        適度にスケールされた報酬関数くらいの観測でないと学習がうまく行かない模様
-        次の検証としてcurrent_ball_amountをスケールして評価してみる
-        """
         reward, current_ball_amount = self.calc_reward()
-
-        # state = np.array([current_ball_amount, self.r_pos]).reshape(-1)
-        # state = np.array([reward]).reshape(-1)  # success
-        # state = np.array([current_ball_amount]).reshape(-1)
-        # state = np.array([current_ball_amount * 1000.]).reshape(-1)
-        # state = np.array([current_ball_amount * 500., self.r_pos * 30.]).reshape(-1)
         state = np.array([current_ball_amount * 500., self.r_pos * 30., self.goal_powder_amount * 500.]).reshape(-1)
         return state
 
     def mapping_action(self, action):
-        """
-        入力される行動の範囲が-1から+1であることを仮定
-        """
         assert (action.any() >= -1) and (action.any() <= 1), 'expected actions are \"-1 to +1\". input actions are {}'.format(action)
         low = self.action_space.low
         high = self.action_space.high
@@ -707,33 +557,6 @@ class Action_space:
         self.ACTION_DIM = len(self.high)
 
     def sample(self):
-        # 行動は-1から+1であることを仮定
         action = np.random.rand()
         action = 2. * (action - 0.5)
         return action
-
-
-def test1():
-    test_env = WeighingEnvironment()
-    test_env.joy_loop()
-
-
-def test2():
-    """
-    スプーンを前後に動かす動作は後で．今の設計だと片方の動きしか定義していないので，振る動作として再定義する必要あり．
-    傾け動作は落とす方向がマイナス．
-    ボール50個で今のタスク設定ならステップ数15くらいでタスクが達成できそう.探索込みなら30ステップが妥当か.
-    """
-    weighingEnvironment = WeighingEnvironment()
-    state = weighingEnvironment.reset()
-    for _ in range(3):
-        action = np.array([0.0, -0.1])
-        next_state, reward, done, domain_parameter = weighingEnvironment.step(action)
-        print(next_state, reward, done, domain_parameter)
-
-
-"""
-次の行動に遷移する前にボールは落ちきっていないけど，それも時系列データとして学習させる方向性で現状は実装している．
-"""
-if __name__ == "__main__":
-    test2()

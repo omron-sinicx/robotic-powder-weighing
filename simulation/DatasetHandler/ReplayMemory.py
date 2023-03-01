@@ -1,5 +1,6 @@
 import numpy as np
-import torch
+
+from .MemoryTerm import MemoryTerm
 
 
 class ReplayMemory(object):
@@ -25,31 +26,56 @@ class ReplayMemory(object):
         if self.userDefinedSettings.DOMAIN_RANDOMIZATION_FLAG:
             self.domainBuffer.clear()
 
-    def add_from_other(self, other_buffer, clear_buffer_flag=False):
+    def add_from_other(self, other_buffer=None, batch_data=None, clear_buffer_flag=False):
+
         if clear_buffer_flag is True:
             self.clear()
 
-        all_sample = other_buffer.sample(len(other_buffer), sampling_method='all', get_debug_term_flag=True)
-        for sample_num in range(len(other_buffer)):
-            for step_num in range(all_sample[0].shape[1]):
-                state = all_sample[0][sample_num][step_num].cpu().numpy()
-                action = all_sample[1][sample_num][step_num].cpu().numpy()
-                reward = all_sample[2][sample_num][step_num].cpu().numpy()
-                next_state = all_sample[3][sample_num][step_num].cpu().numpy()
-                done = all_sample[4][sample_num][step_num].cpu().numpy()
-                hidden_in_0 = all_sample[5]['hidden_in'][0][:, sample_num, :].unsqueeze(0)
-                hidden_in_1 = all_sample[5]['hidden_in'][1][:, sample_num, :].unsqueeze(0)
-                hidden_out_0 = all_sample[5]['hidden_out'][0][:, sample_num, :].unsqueeze(0)
-                hidden_out_1 = all_sample[5]['hidden_out'][1][:, sample_num, :].unsqueeze(0)
-                last_action = all_sample[5]['last_action'][sample_num][step_num].cpu().numpy()
-                lstm_term = {'last_action': last_action,
-                             'hidden_in': [hidden_in_0, hidden_in_1],
-                             'hidden_out': [hidden_out_0, hidden_out_1]}
-                domain_parameter = all_sample[6][sample_num][step_num].cpu().numpy()
-                debug_term = all_sample[7][sample_num][step_num].cpu().numpy()
+        if other_buffer is not None:
+            buffer_length = len(other_buffer)
+            all_sample = other_buffer.sample(len(other_buffer), sampling_method='all', get_debug_term_flag=True)
+        else:
+            buffer_length = batch_data[0].shape[0]
+            all_sample = batch_data
+        for sample_num in range(buffer_length):
+            if self.userDefinedSettings.LSTM_FLAG:
+                for step_num in range(all_sample[0].shape[1]):
+                    state = all_sample[0][sample_num][step_num].cpu().numpy()
+                    action = all_sample[1][sample_num][step_num].cpu().numpy()
+                    reward = all_sample[2][sample_num][step_num].cpu().numpy()
+                    next_state = all_sample[3][sample_num][step_num].cpu().numpy()
+                    done = all_sample[4][sample_num][step_num].cpu().numpy()
+                    hidden_in_0 = all_sample[5]['hidden_in'][0][:, sample_num, :].unsqueeze(0)
+                    hidden_in_1 = all_sample[5]['hidden_in'][1][:, sample_num, :].unsqueeze(0)
+                    hidden_out_0 = all_sample[5]['hidden_out'][0][:, sample_num, :].unsqueeze(0)
+                    hidden_out_1 = all_sample[5]['hidden_out'][1][:, sample_num, :].unsqueeze(0)
+                    last_action = all_sample[5]['last_action'][sample_num][step_num].cpu().numpy()
+                    lstm_term = {'last_action': last_action,
+                                 'hidden_in': [hidden_in_0, hidden_in_1],
+                                 'hidden_out': [hidden_out_0, hidden_out_1]}
+                    if self.userDefinedSettings.DOMAIN_RANDOMIZATION_FLAG:
+                        domain_parameter = all_sample[6][sample_num][step_num].cpu().numpy()
+                    else:
+                        domain_parameter = None
+                    debug_term = all_sample[7][sample_num][step_num].cpu().numpy()
+                    self.push(state, action, reward, next_state, done, lstm_term=lstm_term,
+                              domain_parameter=domain_parameter, debug_term=debug_term,
+                              step=step_num)
+            else:
+                state = all_sample[0][sample_num].cpu().numpy()
+                action = all_sample[1][sample_num].cpu().numpy()
+                reward = all_sample[2][sample_num].cpu().numpy()
+                next_state = all_sample[3][sample_num].cpu().numpy()
+                done = all_sample[4][sample_num].cpu().numpy()
+                lstm_term = None
+                if self.userDefinedSettings.DOMAIN_RANDOMIZATION_FLAG:
+                    domain_parameter = all_sample[6][sample_num].cpu().numpy()
+                else:
+                    domain_parameter = None
+                debug_term = all_sample[7][sample_num].cpu().numpy()
                 self.push(state, action, reward, next_state, done, lstm_term=lstm_term,
                           domain_parameter=domain_parameter, debug_term=debug_term,
-                          step=step_num)
+                          step=0)
 
     def push(self, state, action, reward, next_state, done, lstm_term=None, domain_parameter=None, step=None, debug_term=-1):
         assert step is not None, 'input step number to replay memory push'
@@ -63,13 +89,20 @@ class ReplayMemory(object):
         if self.userDefinedSettings.DOMAIN_RANDOMIZATION_FLAG:
             self.domainBuffer.push(domain_term)
 
-    def sample(self, batch_size, sampling_method='random', get_debug_term_flag=False):
+    def sample(self, batch_size=None, sampling_method='random', get_debug_term_flag=False, from_index=None, to_index=None):
         if sampling_method == 'random':
             batch_index = np.random.randint(low=0, high=len(self), size=batch_size)
         elif sampling_method == 'last':
             batch_index = np.array(range(len(self) - batch_size, len(self)))
         elif sampling_method == 'all':
-            batch_index = range(batch_size)
+            batch_index = range(len(self))
+        elif sampling_method == 'from':
+            if from_index < 0:
+                from_index = 0
+            if to_index is None:
+                to_index = len(self)
+
+            batch_index = np.random.randint(low=from_index, high=to_index, size=batch_size)
         else:
             assert False, 'choose  a correct sampling method of replay memory'
 
@@ -235,100 +268,3 @@ class DomainMemory(object):
 
     def __len__(self):
         return len(self.domain_parameter_buffer)
-
-
-class MemoryTerm(object):
-    def __init__(self, MAX_MEMORY_SIZE, SEQUENCE_LENGTH, STEP_DATA_SHAPE, userDefinedSettings, is_lstm_hidden=False):
-        self.userDefinedSettings = userDefinedSettings
-        self.MAX_MEMORY_SIZE = MAX_MEMORY_SIZE
-        self.SEQUENCE_LENGTH = SEQUENCE_LENGTH
-        self.buffer = CircularQueue(MAX_MEMORY_SIZE=MAX_MEMORY_SIZE, DATA_SHAPE=[SEQUENCE_LENGTH, *STEP_DATA_SHAPE], is_lstm_hidden=is_lstm_hidden)
-        self.episode_data = []
-
-    def clear(self):
-        self.buffer.clear_queue()
-
-    def push(self, data, current_buffer_index):
-        self.episode_data.append(data)
-        if len(self.episode_data) >= self.SEQUENCE_LENGTH:
-            assert len(self.episode_data) == current_buffer_index + 1, 'pushing episode data is shifted'
-            self.push_episode()
-            self.episode_memory_reset()
-
-    def push_episode(self):
-        self.buffer.append(self.episode_data)
-
-    def episode_memory_reset(self):
-        self.episode_data.clear()
-
-    def sample(self, batch_size=None, sampling_method='random', index=None):
-        state_sequence_batch = torch.FloatTensor(self.buffer.get(size=batch_size, how=sampling_method, index=index)).to(self.userDefinedSettings.DEVICE)
-        return state_sequence_batch
-
-    def __len__(self):
-        return len(self.buffer)
-
-
-class CircularQueue(object):
-    def __init__(self, MAX_MEMORY_SIZE, DATA_SHAPE, dtype=np.float32, is_lstm_hidden=False):
-        self.MAX_MEMORY_SIZE = MAX_MEMORY_SIZE
-        self.DATA_SHAPE = DATA_SHAPE
-        self.dtype = dtype
-        self.is_lstm_hidden = is_lstm_hidden
-        self.clear_queue()
-
-    def clear_queue(self):
-        self.circular_queue = np.empty((self.MAX_MEMORY_SIZE, *self.DATA_SHAPE), dtype=self.dtype)
-        self.current_queue_index = 0
-        self.current_queue_size = 0
-
-    def append(self, data):
-        if self.is_lstm_hidden:
-            formated_data = data[0].cpu().detach().numpy().reshape(1, -1)
-        else:
-            formated_data = np.array(data, dtype=self.dtype)
-            if len(formated_data.shape) == 1:
-                formated_data = formated_data.reshape(-1, 1)
-        self.circular_queue[self.current_queue_index] = formated_data
-        self.set_next_queue_index()
-
-    def set_next_queue_index(self):
-        if self.current_queue_size == self.MAX_MEMORY_SIZE - 1:
-            self.current_queue_index = 0
-            self.current_queue_size += 1
-        elif self.current_queue_size < self.MAX_MEMORY_SIZE - 1:
-            self.current_queue_index += 1
-            self.current_queue_size += 1
-        elif self.current_queue_index >= self.MAX_MEMORY_SIZE - 1:
-            self.current_queue_index = 0
-        else:
-            self.current_queue_index += 1
-
-    def get(self, size, how='random', index=None):
-        if index is not None:
-            data = self.circular_queue[index]
-        elif how == 'random':
-            data = self.get_random(size)
-        elif how == 'last':
-            data = self.get_last(size)
-        else:
-            assert False, 'choose correct sampling method of replay memory'
-
-        if self.is_lstm_hidden:
-            sequence_index = 1
-            data = data.squeeze(sequence_index)
-        return data
-
-    def get_random(self, size):
-        index = np.random.randint(low=0, high=len(self.circular_queue), size=size)
-        return self.circular_queue[index]
-
-    def get_last(self, size):
-        if self.current_queue_index - size < 0:
-            remain = size - self.current_queue_index + 1
-            return np.concatenate([self.circular_queue[:self.current_queue_index], self.circular_queue[-remain + 1:]])
-        else:
-            return self.circular_queue[-size:]
-
-    def __len__(self):
-        return self.current_queue_size

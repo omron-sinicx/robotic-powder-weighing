@@ -1,8 +1,0 @@
-ROSを依存を気にせずに小規模インストール
-https://qiita.com/otamasan/items/7ac7732a5c3d47ec3028
-
-ROSを実行するときに最初に実行
-rosmaster
-
-メモリリークしたpythonコードの停止
-sudo pgrep python | xargs kill -KILL
