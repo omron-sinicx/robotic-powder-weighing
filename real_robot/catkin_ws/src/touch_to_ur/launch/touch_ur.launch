@@ -1,0 +1,3 @@
+<launch>
+    <node pkg="touch_to_ur" name="touch_state" type="touch_state" output="screen"/>
+</launch>

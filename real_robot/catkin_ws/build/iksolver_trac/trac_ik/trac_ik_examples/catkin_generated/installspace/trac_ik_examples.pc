@@ -1,0 +1,8 @@
+prefix=/home/yuki-kadokawa/catkin_ws/install
+
+Name: trac_ik_examples
+Description: Description of trac_ik_examples
+Version: 1.6.6
+Cflags: -I/usr/include -I/usr/share/orocos_kdl/cmake/../../../include -I/usr/include/eigen3
+Libs: -L${prefix}/lib /usr/lib/x86_64-linux-gnu/libboost_date_time.so.1.71.0 -lorocos-kdl -lnlopt_cxx
+Requires: trac_ik_lib

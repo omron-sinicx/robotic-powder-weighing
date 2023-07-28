@@ -1,0 +1,71 @@
+<?xml version="1.0"?>
+
+<robot name="bucket">
+
+  <link name="z_link">
+    <visual>
+    </visual>
+  </link>
+
+  <joint name="bucket_slider_y" type="prismatic">
+    <axis xyz="0 0 1"/>
+    <origin xyz="0 0 0"/>
+    <parent link="z_link"/>
+    <child link="y_link"/>
+    <limit effort="1000.0" velocity="100"/>
+  </joint>
+
+  <link name="y_link">
+    <visual>
+    </visual>
+  </link>
+
+  <link name="x_link">
+    <visual>
+    </visual>
+  </link>
+
+  <joint name="bucket_slider_x" type="prismatic">
+    <axis xyz="0 0 1"/>
+    <origin xyz="0 0 0"/>
+    <parent link="x_link"/>
+    <child link="ee_link"/>
+    <limit effort="1000.0" velocity="100"/>
+  </joint>
+
+  <link name="ee_link">
+    <visual>
+      <geometry>
+        <ball size="0.1 0.1 0.1"/>
+      </geometry>
+      <material name="slider_mat">
+        <color rgba="0.9 0.6 0.2 1"/>
+      </material>
+    </visual>
+  </link>
+
+  <joint name="bucket_joint_r" type="continuous">
+    <axis xyz="1 0 0"/>
+    <origin xyz="0 0 0"/>
+    <parent link="ee_link"/>
+    <child link="bucket_link"/>
+    <limit effort="1000.0" velocity="100"/>
+  </joint>
+
+  <link name="bucket_link">
+    <visual>
+      <geometry>
+        <mesh filename="Environment/Weighing/assets/urdf/spoon/spoon.dae"/>
+      </geometry>
+      <origin rpy="1.57 0 3.14" xyz="0 0 0"/>
+    </visual>
+    <collision>
+      <geometry>
+        <mesh filename="Environment/Weighing/assets/urdf/spoon/spoon.stl"/>
+      </geometry>
+      <origin rpy="1.57 0 3.14" xyz="0 0 0"/>
+    </collision>
+  </link>
+
+</robot>
+

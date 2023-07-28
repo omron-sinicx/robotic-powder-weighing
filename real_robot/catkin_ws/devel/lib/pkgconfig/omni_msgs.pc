@@ -1,0 +1,8 @@
+prefix=/home/yuki-kadokawa/catkin_ws/devel
+
+Name: omni_msgs
+Description: Description of omni_msgs
+Version: 0.1.0
+Cflags: -I/home/yuki-kadokawa/catkin_ws/devel/include
+Libs: -L${prefix}/lib 
+Requires: message_runtime geometry_msgs sensor_msgs std_msgs

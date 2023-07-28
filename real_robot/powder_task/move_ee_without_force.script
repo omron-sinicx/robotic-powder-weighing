@@ -1,0 +1,70 @@
+cmd = """
+def UR_Control():
+    global frequency = 0.0
+    global loop_time = 0.0
+    global current_time = 0
+    global data = [0, 0, 0, 0, 0, 0, 0]
+    global ee_pose = p[0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    global joints = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+
+    thread move_func():
+
+        threshold = 10
+        back = 0.1
+
+        if (data[0] == 6):
+            speedl([data[1], data[2], data[3], data[4], data[5], data[6]], 1.0, 1.0)
+        end
+       
+        return False
+    end
+
+    thread client():
+        if (not socket_open("192.168.11.2", 30002, "my_script")):
+            popup("Can't connect", "Terminal", error = True)
+            halt
+        end
+        local tic = current_time
+        
+        thrd = run move_func()
+
+        zero_ftsensor()
+
+        while True:
+            
+            data = socket_read_ascii_float(6, "my_script")
+
+            ee_pose = get_actual_tcp_pose()
+            joints = get_actual_joint_positions()
+
+            state = ""
+            state = str_cat(state, ee_pose)
+            state = str_cat(state, "_")
+            state = str_cat(state, joints)
+            socket_send_string(state, "my_script")
+
+            kill thrd
+            thrd = run move_func()
+            
+            toc = current_time
+            loop_time = toc - tic
+            frequency = 1 / loop_time
+            sync()
+            tic = current_time
+        end
+        return False
+    end
+
+    thread timer():
+        while True:
+            current_time = current_time + get_steptime()
+            sync()
+        end
+        return False
+    end
+
+    timer_thrd = run timer()
+    client_thrd = run client()
+    join client_thrd
+end
+"""
